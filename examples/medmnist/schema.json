@@ -5,12 +5,22 @@
         {
             "name": "trainer",
             "description": "It consumes the data and trains local model",
-            "isDataConsumer": true
+            "isDataConsumer": true,
+            "groupAssociation": [
+                {
+                    "param-channel": "default/us"
+                }
+            ]
         },
         {
             "name": "aggregator",
             "description": "It aggregates the updates from trainers",
-            "replica": 1
+            "replica": 1,
+            "groupAssociation": [
+                {
+                    "param-channel": "default/us"
+                }
+            ]
         }
     ],
     "channels": [
