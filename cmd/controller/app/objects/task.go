@@ -22,7 +22,6 @@ import (
 
 	"github.com/cisco-open/flame/cmd/controller/config"
 	"github.com/cisco-open/flame/pkg/openapi"
-	"github.com/cisco-open/flame/pkg/util"
 )
 
 type Task struct {
@@ -50,8 +49,10 @@ type JobConfig struct {
 	Job      JobIdName         `json:"job"`
 	Role     string            `json:"role"`
 	Realm    string            `json:"realm"`
-	Groups   map[string]string `json:"groups"`
 	Channels []openapi.Channel `json:"channels"`
+	// Groups is a map of group name to group id
+	// structure: channelName:groupName
+	GroupAssociation map[string]string `json:"groupAssociation"`
 
 	MaxRunTime      int32                  `json:"maxRunTime,omitempty"`
 	BaseModel       openapi.BaseModel      `json:"baseModel,omitempty"`
@@ -62,7 +63,7 @@ type JobConfig struct {
 	Selector        openapi.Selector       `json:"selector,omitempty"`
 }
 
-func (tsk *Task) generateTaskId(idx int) {
+func (tsk *Task) GenerateTaskId(idx int) {
 	h := sha1.New()
 	data := fmt.Sprintf("%s-%d-%v", tsk.JobId, idx, tsk.JobConfig)
 	h.Write([]byte(data))
@@ -70,19 +71,12 @@ func (tsk *Task) generateTaskId(idx int) {
 	tsk.TaskId = fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func (tsk *Task) Configure(taskType openapi.TaskType, taskKey string, realm string, datasetUrl string, idx int) {
-	tsk.Type = taskType
-	tsk.Key = taskKey
-
-	tsk.JobConfig.Realm = realm
-	tsk.JobConfig.DatasetUrl = datasetUrl
-
-	// generateTaskId() should be called after JobConfig is completely populated
-	tsk.generateTaskId(idx)
-}
-
-func (cfg *JobConfig) Configure(jobSpec *openapi.JobSpec, brokers []config.Broker, registry config.Registry,
-	role openapi.Role, channels []openapi.Channel) {
+func (cfg *JobConfig) Configure(
+	jobSpec *openapi.JobSpec,
+	brokers []config.Broker,
+	registry config.Registry,
+	role openapi.Role,
+) {
 	cfg.Job.Id = jobSpec.Id
 	// DesignId is a string suitable as job's name
 	cfg.Job.Name = jobSpec.DesignId
@@ -99,12 +93,6 @@ func (cfg *JobConfig) Configure(jobSpec *openapi.JobSpec, brokers []config.Broke
 	cfg.DatasetUrl = ""
 
 	cfg.Role = role.Name
-	// Realm will be updated when datasets are handled
-	cfg.Realm = ""
-	cfg.Channels = cfg.extractChannels(role.Name, channels)
-
-	// configure the groups of the job based on the groups associated with the assigned role
-	cfg.Groups = cfg.extractGroups(role.GroupAssociation)
 }
 
 // extractGroups - extracts the associated groups that a given role has of a particular job
@@ -119,37 +107,3 @@ func (cfg *JobConfig) extractGroups(groupAssociation []map[string]string) map[st
 
 	return groups
 }
-
-func (cfg *JobConfig) extractChannels(role string, channels []openapi.Channel) []openapi.Channel {
-	exChannels := make([]openapi.Channel, 0)
-
-	for _, channel := range channels {
-		if util.Contains(channel.Pair, role) {
-			exChannels = append(exChannels, channel)
-		}
-	}
-
-	return exChannels
-}
-
-/*
-// For debugging purpose during development
-func (jc JobConfig) Print() {
-	zap.S().Debug("---")
-	zap.S().Debugf("backend: %s\n", jc.BackEnd)
-	zap.S().Debugf("broker: %s\n", jc.Broker)
-	zap.S().Debugf("JobId: %s\n", jc.JobId)
-	zap.S().Debugf("Role: %s\n", jc.Role)
-	zap.S().Debugf("Realm: %s\n", jc.Realm)
-	for i, channel := range jc.Channels {
-		zap.S().Debugf("\t[%d] channel: %v\n", i, channel)
-	}
-
-	zap.S().Debugf("MaxRunTime: %d\n", jc.MaxRunTime)
-	zap.S().Debugf("BaseModelId: %s\n", jc.BaseModelId)
-	zap.S().Debugf("Hyperparameters: %v\n", jc.Hyperparameters)
-	zap.S().Debugf("Dependencies: %v\n", jc.Dependencies)
-	zap.S().Debugf("DatasetUrl: %s\n", jc.DatasetUrl)
-	zap.S().Debug("")
-}
-*/

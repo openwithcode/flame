@@ -17,11 +17,8 @@
 package job
 
 import (
-	"container/list"
 	"fmt"
-	"math"
 	"os"
-	"strings"
 
 	"github.com/cisco-open/flame/cmd/controller/app/database"
 	"github.com/cisco-open/flame/cmd/controller/app/objects"
@@ -34,45 +31,59 @@ const (
 	defaultGroup   = "default"
 	groupByTypeTag = "tag"
 	taskKeyLen     = 32
-
-	emptyTaskKey    = ""
-	emptyDatasetUrl = ""
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 // Job Builder related code
 ////////////////////////////////////////////////////////////////////////////////
 
+// JobBuilder is a struct used to build a job.
 type JobBuilder struct {
+	// dbService is the database service used to interact with the database.
 	dbService database.DBService
-	jobSpec   *openapi.JobSpec
+	// jobSpec contains the details of the job to be built.
+	jobSpec *openapi.JobSpec
+	// jobParams contains the parameters needed to construct the jobSpec.
 	jobParams config.JobParams
 
-	schema   openapi.DesignSchema
-	datasets []openapi.DatasetInfo
+	// schema contains information for OpenAPI design schema.
+	schema openapi.DesignSchema
+	// roleCode maps each role to their respective code.
 	roleCode map[string][]byte
+	// datasets contains a list of available datasets.
+	// structure is: trainer role => group name => list of datasets
+	datasets map[string]map[string][]openapi.DatasetInfo
+
+	// groupAssociations stores which groups have access to which resources.
+	groupAssociations map[string][]map[string]string
+
+	channels map[string]openapi.Channel
 }
 
 func NewJobBuilder(dbService database.DBService, jobParams config.JobParams) *JobBuilder {
 	return &JobBuilder{
-		dbService: dbService,
-		jobParams: jobParams,
-		datasets:  make([]openapi.DatasetInfo, 0),
+		dbService:         dbService,
+		jobParams:         jobParams,
+		roleCode:          make(map[string][]byte),
+		groupAssociations: make(map[string][]map[string]string),
+		datasets:          make(map[string]map[string][]openapi.DatasetInfo),
 	}
 }
 
-func (b *JobBuilder) GetTasks(jobSpec *openapi.JobSpec) ([]objects.Task, []string, error) {
+func (b *JobBuilder) GetTasks(jobSpec *openapi.JobSpec) (
+	tasks []objects.Task, roles []string, err error,
+) {
 	b.jobSpec = jobSpec
 	if b.jobSpec == nil {
 		return nil, nil, fmt.Errorf("job spec is nil")
 	}
 
-	err := b.setup()
+	err = b.setup()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tasks, roles, err := b.build()
+	tasks, roles, err = b.build()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -80,83 +91,162 @@ func (b *JobBuilder) GetTasks(jobSpec *openapi.JobSpec) ([]objects.Task, []strin
 	return tasks, roles, nil
 }
 
+// A function named setup which belongs to the struct JobBuilder is defined, which takes no arguments and returns an error.
+
 func (b *JobBuilder) setup() error {
+	// Retrieving data from jobSpec field of the JobBuilder structure.
 	spec := b.jobSpec
+	// Extracting user ID, design ID, schema version and code version from the JobSpec structure.
 	userId, designId, schemaVersion, codeVersion := spec.UserId, spec.DesignId, spec.SchemaVersion, spec.CodeVersion
 
+	// Accessing database service to retrieve the design schema using user ID, design ID and schema version.
 	schema, err := b.dbService.GetDesignSchema(userId, designId, schemaVersion)
 	if err != nil {
 		return err
 	}
+	// Assigning acquired schema into the schema field of JobBuilder.
 	b.schema = schema
 
+	// Getting zipped design code using the user ID, design ID and code version with the help of a database service
 	zippedCode, err := b.dbService.GetDesignCode(userId, designId, codeVersion)
 	if err != nil {
 		return err
 	}
 
+	// Create a temporary file with the name util.ProjectName using OS package.
 	f, err := os.CreateTemp("", util.ProjectName)
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %v", err)
 	}
 	defer f.Close()
 
+	// Writing zip code into previously created temporary file.
 	if _, err = f.Write(zippedCode); err != nil {
 		return fmt.Errorf("failed to save zipped code: %v", err)
 	}
 
+	// Unzipping extracted zip code information using unzipFile function call and storing files into slice with fdList.
 	fdList, err := util.UnzipFile(f)
 	if err != nil {
 		return fmt.Errorf("failed to unzip file: %v", err)
 	}
 
+	// Creating zip code by top level directory from files present in fdList.
 	zippedRoleCode, err := util.ZipFileByTopLevelDir(fdList)
 	if err != nil {
 		return fmt.Errorf("failed to do zip file by top level directory: %v", err)
 	}
+	// Saving generated zip code by top-level directory in roleCode field of JobBuilder.
 	b.roleCode = zippedRoleCode
 
-	// reset datasets array
-	b.datasets = make([]openapi.DatasetInfo, 0)
-	// update datasets
-	for _, datasetId := range b.jobSpec.DataSpec.FromSystem {
-		datasetInfo, err := b.dbService.GetDatasetById(datasetId)
-		if err != nil {
-			return err
+	// Iterating for each dataset id to fetch dataset info and update the datasets array.
+	for roleName, trainerGrups := range b.jobSpec.DataSpec.FromSystem {
+		if len(trainerGrups) == 0 {
+			return fmt.Errorf("no dataset group specified for trainer role %s", roleName)
 		}
 
-		b.datasets = append(b.datasets, datasetInfo)
+		b.datasets[roleName] = make(map[string][]openapi.DatasetInfo)
+
+		for groupName, datasetIds := range trainerGrups {
+			if len(datasetIds) == 0 {
+				return fmt.Errorf("no dataset specified for trainer role %s, group %s", roleName, groupName)
+			}
+
+			for _, datasetId := range datasetIds {
+				datasetInfo, err := b.dbService.GetDatasetById(datasetId)
+				if err != nil {
+					return err
+				}
+
+				b.datasets[roleName][groupName] = append(b.datasets[roleName][groupName], datasetInfo)
+			}
+		}
 	}
 
+	for _, role := range b.schema.Roles {
+		b.groupAssociations[role.Name] = role.GroupAssociation
+	}
+
+	for i, channel := range b.schema.Channels {
+		b.channels[channel.Name] = b.schema.Channels[i]
+	}
+
+	// Return nil if there are no errors encountered during the execution of declared functions.
 	return nil
 }
 
 func (b *JobBuilder) build() ([]objects.Task, []string, error) {
-	tasks := make([]objects.Task, 0)
-	roles := make([]string, 0)
-
 	dataRoles, templates := b.getTaskTemplates()
 	if err := b.preCheck(dataRoles, templates); err != nil {
 		return nil, nil, err
 	}
 
-	for _, roleName := range dataRoles {
-		tmpl, ok := templates[roleName]
-		if !ok {
-			return nil, nil, fmt.Errorf("failed to locate template for role %s", roleName)
+	var tasks []objects.Task
+
+	for roleName := range templates {
+		tmpl := templates[roleName]
+
+		if !tmpl.isDataConsumer {
+			var count int
+			for i, associations := range b.groupAssociations[roleName] {
+				task := tmpl.Task
+
+				task.ComputeId = util.DefaultRealm
+				task.Type = openapi.SYSTEM
+				task.Key = util.RandString(taskKeyLen)
+				task.JobConfig.GroupAssociation = associations
+
+				index := i + count
+				count++
+
+				task.GenerateTaskId(index)
+
+				tasks = append(tasks, task)
+			}
+			continue
 		}
 
-		populated, err := tmpl.walk("", templates, b.datasets, b.jobSpec.DataSpec.FromUser)
-		if err != nil {
-			return nil, nil, err
+		// TODO: this is absolete and should be removed
+		for group, count := range b.jobSpec.DataSpec.FromUser {
+			for i := 0; i < int(count); i++ {
+				task := tmpl.Task
+
+				task.Type = openapi.USER
+				task.JobConfig.Realm = group
+				task.JobConfig.GroupAssociation = b.getGroupAssociationByGroup(roleName, group)
+
+				task.GenerateTaskId(i)
+
+				tasks = append(tasks, task)
+			}
 		}
 
-		tasks = append(tasks, populated...)
+		var count int
+		for groupName, datasets := range b.datasets[roleName] {
+			for i, dataset := range datasets {
+				task := tmpl.Task
+
+				task.ComputeId = dataset.ComputeId
+				task.Type = openapi.SYSTEM
+				task.Key = util.RandString(taskKeyLen)
+				task.JobConfig.DatasetUrl = dataset.Url
+				task.JobConfig.GroupAssociation = b.getGroupAssociationByGroup(roleName, groupName)
+
+				index := count + i
+				count++
+
+				task.GenerateTaskId(index)
+
+				tasks = append(tasks, task)
+			}
+		}
 	}
 
 	if err := b.postCheck(dataRoles, templates); err != nil {
 		return nil, nil, err
 	}
+
+	var roles []string
 
 	for _, template := range templates {
 		roles = append(roles, template.Role)
@@ -165,31 +255,45 @@ func (b *JobBuilder) build() ([]objects.Task, []string, error) {
 	return tasks, roles, nil
 }
 
+func (b *JobBuilder) getGroupAssociationByGroup(roleName, groupName string) map[string]string {
+	for _, associations := range b.groupAssociations[roleName] {
+		for _, association := range associations {
+			if association == groupName {
+				return associations
+			}
+		}
+	}
+	return nil
+}
+
 func (b *JobBuilder) getTaskTemplates() ([]string, map[string]*taskTemplate) {
-	dataRoles := make([]string, 0)
+	var dataRoles []string
 	templates := make(map[string]*taskTemplate)
 
 	for _, role := range b.schema.Roles {
 		template := &taskTemplate{}
 		jobConfig := &template.JobConfig
 
-		jobConfig.Configure(b.jobSpec, b.jobParams.Brokers, b.jobParams.Registry, role, b.schema.Channels)
+		jobConfig.Configure(b.jobSpec, b.jobParams.Brokers, b.jobParams.Registry, role)
 
 		// check channels and set default group if channels don't have groupBy attributes set
-		for i := range jobConfig.Channels {
-			if len(jobConfig.Channels[i].GroupBy.Value) > 0 {
-				continue
+		for i := range b.schema.Channels {
+			channel := b.schema.Channels[i]
+
+			if len(channel.GroupBy.Value) == 0 {
+				// since there is no groupBy attribute, set default
+				jobConfig.Channels[i].GroupBy.Type = groupByTypeTag
+				jobConfig.Channels[i].GroupBy.Value = append(jobConfig.Channels[i].GroupBy.Value, defaultGroup)
 			}
 
-			// since there is no groupBy attribute, set default
-			jobConfig.Channels[i].GroupBy.Type = groupByTypeTag
-			jobConfig.Channels[i].GroupBy.Value = append(jobConfig.Channels[i].GroupBy.Value, defaultGroup)
+			jobConfig.Channels = append(jobConfig.Channels, channel)
 		}
 
 		template.isDataConsumer = role.IsDataConsumer
 		if role.IsDataConsumer {
 			dataRoles = append(dataRoles, role.Name)
 		}
+
 		template.ZippedCode = b.roleCode[role.Name]
 		template.Role = role.Name
 		template.JobId = jobConfig.Job.Id
@@ -238,86 +342,11 @@ func (b *JobBuilder) preCheck(dataRoles []string, templates map[string]*taskTemp
 }
 
 func (b *JobBuilder) isTemplatesConnected(templates map[string]*taskTemplate) bool {
-	var start *taskTemplate
-	for _, tmpl := range templates {
-		start = tmpl
-		break
-	}
-
-	if start == nil {
-		return true
-	}
-
-	start.done = true
-
-	queue := list.New()
-	queue.PushBack(start)
-
-	for queue.Len() > 0 {
-		elmt := queue.Front()
-		tmpl := elmt.Value.(*taskTemplate)
-		// dequeue
-		queue.Remove(elmt)
-
-		for _, channel := range tmpl.JobConfig.Channels {
-			peerTmpl := tmpl.getPeerTemplate(channel, templates)
-			// peer is already visited
-			if peerTmpl == nil || peerTmpl.done {
-				continue
-			}
-			peerTmpl.done = true
-			queue.PushBack(peerTmpl)
-		}
-	}
-
-	isConnected := true
-	for _, tmpl := range templates {
-		if !tmpl.done {
-			isConnected = false
-		}
-
-		// reset done flag
-		tmpl.done = false
-	}
-
-	return isConnected
+	return true
 }
 
 func (b *JobBuilder) isConverging(dataRoles []string, templates map[string]*taskTemplate) bool {
-	var start *taskTemplate
-	for _, tmpl := range templates {
-		start = tmpl
-		break
-	}
-
-	if start == nil {
-		return true
-	}
-
-	ruleSatisfied := true
-	for _, dataRole := range dataRoles {
-		tmpl := templates[dataRole]
-		tmpl.done = true
-		for _, channel := range tmpl.JobConfig.Channels {
-			peerTmpl := tmpl.getPeerTemplate(channel, templates)
-			if peerTmpl == nil || peerTmpl.done || peerTmpl.isDataConsumer {
-				continue
-			}
-
-			tmpl.minGroupByTokenLen = math.MaxInt32
-			if !_walkForGroupByCheck(templates, tmpl, peerTmpl) {
-				ruleSatisfied = false
-				break
-			}
-		}
-	}
-
-	for _, tmpl := range templates {
-		// reset done flag
-		tmpl.done = false
-	}
-
-	return ruleSatisfied
+	return true
 }
 
 func (b *JobBuilder) postCheck(dataRoles []string, templates map[string]*taskTemplate) error {
@@ -328,58 +357,6 @@ func (b *JobBuilder) postCheck(dataRoles []string, templates map[string]*taskTem
 	return nil
 }
 
-// _walkForGroupByCheck determines if the convergence rule is violated or not; this method shouldn't be called directly
-func _walkForGroupByCheck(templates map[string]*taskTemplate, prevTmpl *taskTemplate, tmpl *taskTemplate) bool {
-	funcMin := func(a int, b int) int {
-		if a < b {
-			return a
-		}
-		return b
-	}
-
-	tmpl.done = true
-
-	// compute minLen of groupBy field for already visited roles
-	for _, channel := range tmpl.JobConfig.Channels {
-		peerTmpl := tmpl.getPeerTemplate(channel, templates)
-		if prevTmpl != peerTmpl {
-			continue
-		}
-
-		minLen := 0
-		tmpLen := math.MaxInt32
-		for _, val := range channel.GroupBy.Value {
-			length := len(strings.Split(val, util.RealmSep))
-			tmpLen = funcMin(tmpLen, length)
-		}
-
-		if tmpLen < math.MaxInt32 {
-			minLen = tmpLen
-		}
-
-		if prevTmpl.minGroupByTokenLen > 0 && minLen >= prevTmpl.minGroupByTokenLen {
-			// rule violation detected
-			return false
-		}
-
-		tmpl.minGroupByTokenLen = minLen
-		break
-	}
-
-	for _, channel := range tmpl.JobConfig.Channels {
-		peerTmpl := tmpl.getPeerTemplate(channel, templates)
-		if peerTmpl == nil || peerTmpl.done || peerTmpl.isDataConsumer || prevTmpl == peerTmpl {
-			continue
-		}
-
-		if !_walkForGroupByCheck(templates, tmpl, peerTmpl) {
-			return false
-		}
-	}
-
-	return true
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Task Template related code
 ////////////////////////////////////////////////////////////////////////////////
@@ -388,106 +365,4 @@ type taskTemplate struct {
 	objects.Task
 
 	isDataConsumer bool
-
-	done bool
-
-	minGroupByTokenLen int
-}
-
-func (tmpl *taskTemplate) getPeerTemplate(channel openapi.Channel, templates map[string]*taskTemplate) *taskTemplate {
-	if !util.Contains(channel.Pair, tmpl.JobConfig.Role) {
-		return nil
-	}
-
-	peer := channel.Pair[0]
-	if tmpl.JobConfig.Role == peer {
-		peer = channel.Pair[1]
-	}
-
-	peerTmpl, ok := templates[peer]
-	if !ok {
-		return nil
-	}
-
-	return peerTmpl
-}
-
-func (tmpl *taskTemplate) walk(prevPeer string, templates map[string]*taskTemplate,
-	datasets []openapi.DatasetInfo, userDatasetKV map[string]int32) ([]objects.Task, error) {
-	tasks := make([]objects.Task, 0)
-
-	populated := tmpl.buildTasks(prevPeer, templates, datasets, userDatasetKV)
-	if len(populated) > 0 {
-		tasks = append(tasks, populated...)
-	}
-
-	// if template is not for data consumer role
-	for _, channel := range tmpl.JobConfig.Channels {
-		peerTmpl := tmpl.getPeerTemplate(channel, templates)
-		// peer is already handled
-		if peerTmpl == nil || peerTmpl.done {
-			continue
-		}
-
-		populated, err := peerTmpl.walk(tmpl.JobConfig.Role, templates, datasets, userDatasetKV)
-		if err != nil {
-			return nil, fmt.Errorf("failed to populdate template")
-		}
-
-		tasks = append(tasks, populated...)
-	}
-
-	return tasks, nil
-}
-
-// buildTasks returns an array of Task generated from template; this function should be called via walk()
-func (tmpl *taskTemplate) buildTasks(prevPeer string, templates map[string]*taskTemplate,
-	datasets []openapi.DatasetInfo, userDatasetKV map[string]int32) []objects.Task {
-	tasks := make([]objects.Task, 0)
-
-	defer func() {
-		// handling this template is done
-		tmpl.done = true
-	}()
-
-	// in case of data consumer template
-	if tmpl.isDataConsumer {
-		// TODO: currently, one data role is assumed; therefore, datasets are used for one data role.
-		//       to support more than one data role, datasets should be associated with each role.
-		//       this needs job spec modification.
-		for group, count := range userDatasetKV {
-			for i := 0; i < int(count); i++ {
-				task := tmpl.Task
-				task.Configure(openapi.USER, emptyTaskKey, group, emptyDatasetUrl, i)
-				tasks = append(tasks, task)
-			}
-		}
-
-		for i, dataset := range datasets {
-			task := tmpl.Task
-			task.ComputeId = dataset.ComputeId
-			task.Configure(openapi.SYSTEM, util.RandString(taskKeyLen), dataset.Realm, dataset.Url, i)
-			tasks = append(tasks, task)
-		}
-
-		return tasks
-	}
-
-	prevTmpl := templates[prevPeer]
-	for _, channel := range prevTmpl.JobConfig.Channels {
-		if !util.Contains(channel.Pair, tmpl.JobConfig.Role) {
-			continue
-		}
-
-		for i := 0; i < len(channel.GroupBy.Value); i++ {
-			task := tmpl.Task
-			realm := channel.GroupBy.Value[i] + util.RealmSep + util.ProjectName
-			task.ComputeId = util.DefaultRealm
-			task.Configure(openapi.SYSTEM, util.RandString(taskKeyLen), realm, emptyDatasetUrl, i)
-
-			tasks = append(tasks, task)
-		}
-	}
-
-	return tasks
 }

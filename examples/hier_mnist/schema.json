@@ -18,7 +18,7 @@
             "replica": 1,
             "groupAssociation": [
                 {
-                    "param-channel": "default/us",
+                    "param-channel": "default/eu",
                     "global-channel": "default"
                 }
             ]
