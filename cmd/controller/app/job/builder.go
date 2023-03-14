@@ -67,6 +67,7 @@ func NewJobBuilder(dbService database.DBService, jobParams config.JobParams) *Jo
 		roleCode:          make(map[string][]byte),
 		groupAssociations: make(map[string][]map[string]string),
 		datasets:          make(map[string]map[string][]openapi.DatasetInfo),
+		channels:          make(map[string]openapi.Channel),
 	}
 }
 
@@ -140,14 +141,14 @@ func (b *JobBuilder) setup() error {
 	b.roleCode = zippedRoleCode
 
 	// Iterating for each dataset id to fetch dataset info and update the datasets array.
-	for roleName, trainerGrups := range b.jobSpec.DataSpec.FromSystem {
-		if len(trainerGrups) == 0 {
+	for roleName, groups := range b.jobSpec.DataSpec.FromSystem {
+		if len(groups) == 0 {
 			return fmt.Errorf("no dataset group specified for trainer role %s", roleName)
 		}
 
 		b.datasets[roleName] = make(map[string][]openapi.DatasetInfo)
 
-		for groupName, datasetIds := range trainerGrups {
+		for groupName, datasetIds := range groups {
 			if len(datasetIds) == 0 {
 				return fmt.Errorf("no dataset specified for trainer role %s, group %s", roleName, groupName)
 			}
