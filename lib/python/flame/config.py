@@ -122,11 +122,8 @@ class GroupBy(FlameSchema):
         if self.value is None:
             return GROUPBY_DEFAULT_GROUP
 
-        group_prefix = group_association.split(GROUP_ASSOCIATION_SEPARATOR)[0]
-
-        for value in self.value:
-            if group_prefix == value:
-                return value
+        if group_association in self.value:
+            return group_association
 
         return GROUPBY_DEFAULT_GROUP
 
@@ -189,6 +186,7 @@ def transform_config(raw_config: dict) -> dict:
         "realm": raw_config["realm"],
         "task_id": raw_config["taskid"],
         "backend": raw_config["backend"],
+        "group_association": raw_config["groupAssociation"],
     }
 
     if raw_config.get("task", None):
