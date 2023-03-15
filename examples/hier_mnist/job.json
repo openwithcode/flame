@@ -6,12 +6,18 @@
         "fromUser": {
             "default": 0
         },
-        "fromSystem": [
-            "624b4417dad565fc66f8a0ee",
-            "624b4428dad565fc66f8a0ef",
-            "624b4430dad565fc66f8a0f0",
-            "624b4437dad565fc66f8a0f1"
-        ]
+        "fromSystem": {
+            "trainer": {
+                "eu": [
+                    "624b4417dad565fc66f8a0ee",
+                    "624b4428dad565fc66f8a0ef"
+                ],
+                "na": [
+                    "624b4430dad565fc66f8a0f0",
+                    "624b4437dad565fc66f8a0f1"
+                ]
+            }
+        }
     },
     "priority": "low",
 
@@ -31,11 +37,9 @@
         "numpy >= 1.2.0"
     ],
     "selector": {
-        "sort": "default",
-        "kwargs": {}
+        "sort": "default"
     },
     "optimizer": {
-        "sort": "fedavg",
-        "kwargs": {}
+        "sort": "fedavg"
     }
 }

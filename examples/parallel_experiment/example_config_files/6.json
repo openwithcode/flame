@@ -1,0 +1,63 @@
+{
+    "backend": "mqtt",
+    "registry": {
+        "sort": "",
+        "uri": ""
+    },
+    "job": {
+        "id": "64110e3e87e2b700fb6e5d81",
+        "name": "parallel_exp"
+    },
+    "role": "aggregator",
+    "realm": "",
+    "channels": [
+        {
+            "name": "param-channel",
+            "description": "Model update is sent from trainer to aggregator and vice-versa",
+            "pair": [
+                "trainer",
+                "aggregator"
+            ],
+            "groupBy": {
+                "type": "tag",
+                "value": [
+                    "us",
+                    "eu",
+                    "asia"
+                ]
+            },
+            "funcTags": {
+                "aggregator": [
+                    "distribute",
+                    "aggregate"
+                ],
+                "trainer": [
+                    "fetch",
+                    "upload"
+                ]
+            }
+        }
+    ],
+    "groupAssociation": {
+        "param-channel": "asia"
+    },
+    "maxRunTime": 1800,
+    "baseModel": {},
+    "hyperparameters": {
+        "batchSize": 32,
+        "learningRate": 0.01,
+        "rounds": 5
+    },
+    "dependencies": [
+        "numpy \u003e= 1.2.0"
+    ],
+    "optimizer": {
+        "sort": "fedavg"
+    },
+    "selector": {
+        "sort": "random",
+        "kwargs": {
+            "k": 1
+        }
+    }
+}

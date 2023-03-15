@@ -133,7 +133,9 @@ func TestGetTaskTemplates(t *testing.T) {
 	builder.jobSpec = &testJobSpec
 
 	builder.schema = testSchema
-	builder.datasets["trainer"][composeGroup(defaultGroup, "uk")] = testDatasets
+	builder.datasets["trainer"] = map[string][]openapi.DatasetInfo{
+		composeGroup(defaultGroup, "uk"): testDatasets,
+	}
 	builder.roleCode = testRoleCode
 
 	dataRoles, templates := builder.getTaskTemplates()
@@ -150,7 +152,9 @@ func TestPreCheck(t *testing.T) {
 	builder.jobSpec = &testJobSpec
 
 	builder.schema = testSchema
-	builder.datasets["trainer"][composeGroup(defaultGroup, "uk")] = testDatasets
+	builder.datasets["trainer"] = map[string][]openapi.DatasetInfo{
+		composeGroup(defaultGroup, "uk"): testDatasets,
+	}
 
 	dataRoles, templates := builder.getTaskTemplates()
 	err := builder.preCheck(dataRoles, templates)
@@ -175,16 +179,14 @@ func TestIsTemplatesConnected(t *testing.T) {
 	builder.roleCode = testRoleCode
 
 	_, templates := builder.getTaskTemplates()
-	isConnected := builder.isTemplatesConnected(templates)
-	assert.True(t, isConnected)
+	assert.NoError(t, builder.isTemplatesConnected(templates))
 
 	savedPair := builder.schema.Channels[0].Pair
 	// disconnect one channel
 	builder.schema.Channels[0].Pair = []string{}
 
 	_, templates = builder.getTaskTemplates()
-	isConnected = builder.isTemplatesConnected(templates)
-	assert.False(t, isConnected)
+	assert.NoError(t, builder.isTemplatesConnected(templates))
 	// restore connection
 	builder.schema.Channels[0].Pair = savedPair
 }

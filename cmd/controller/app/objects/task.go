@@ -94,16 +94,3 @@ func (cfg *JobConfig) Configure(
 
 	cfg.Role = role.Name
 }
-
-// extractGroups - extracts the associated groups that a given role has of a particular job
-func (cfg *JobConfig) extractGroups(groupAssociation []map[string]string) map[string]string {
-	groups := make(map[string]string)
-
-	for _, ag := range groupAssociation {
-		for key, value := range ag {
-			groups[key] = value
-		}
-	}
-
-	return groups
-}

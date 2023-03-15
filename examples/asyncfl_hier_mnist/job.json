@@ -43,7 +43,6 @@
         }
     },
     "optimizer": {
-        "sort": "fedbuff",
-        "kwargs": {}
+        "sort": "fedbuff"
     }
 }

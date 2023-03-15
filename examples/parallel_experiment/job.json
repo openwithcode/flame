@@ -6,11 +6,19 @@
         "fromUser": {
             "default": 0
         },
-        "fromSystem": [
-            "6261a0541bf79323fd13a4e9",
-            "6261a05d1bf79323fd13a4ea",
-            "6261a0651bf79323fd13a4eb"
-        ]
+        "fromSystem": {
+            "trainer": {
+                "asia": [
+                    "6261a0541bf79323fd13a4e9"
+                ],
+                "eu": [
+                    "6261a05d1bf79323fd13a4ea"
+                ],
+                "us": [
+                    "6261a0651bf79323fd13a4eb"
+                ]
+            }
+        }
     },
     "priority": "low",
 
@@ -36,7 +44,6 @@
         }
     },
     "optimizer": {
-        "sort": "fedavg",
-        "kwargs": {}
+        "sort": "fedavg"
     }
 }

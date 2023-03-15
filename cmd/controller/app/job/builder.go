@@ -19,6 +19,7 @@ package job
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/cisco-open/flame/cmd/controller/app/database"
 	"github.com/cisco-open/flame/cmd/controller/app/objects"
@@ -184,7 +185,8 @@ func (b *JobBuilder) build() ([]objects.Task, []string, error) {
 
 	var tasks []objects.Task
 
-	for roleName := range templates {
+	roleKeys := sortedKeys(templates)
+	for _, roleName := range roleKeys {
 		tmpl := templates[roleName]
 
 		if !tmpl.isDataConsumer {
@@ -207,7 +209,7 @@ func (b *JobBuilder) build() ([]objects.Task, []string, error) {
 			continue
 		}
 
-		// TODO: this is absolete and should be removed
+		// TODO: this is absolute and should be removed
 		for group, count := range b.jobSpec.DataSpec.FromUser {
 			for i := 0; i < int(count); i++ {
 				task := tmpl.Task
@@ -283,8 +285,8 @@ func (b *JobBuilder) getTaskTemplates() ([]string, map[string]*taskTemplate) {
 
 			if len(channel.GroupBy.Value) == 0 {
 				// since there is no groupBy attribute, set default
-				jobConfig.Channels[i].GroupBy.Type = groupByTypeTag
-				jobConfig.Channels[i].GroupBy.Value = append(jobConfig.Channels[i].GroupBy.Value, defaultGroup)
+				channel.GroupBy.Type = groupByTypeTag
+				channel.GroupBy.Value = append(channel.GroupBy.Value, defaultGroup)
 			}
 
 			jobConfig.Channels = append(jobConfig.Channels, channel)
@@ -327,9 +329,9 @@ func (b *JobBuilder) preCheck(dataRoles []string, templates map[string]*taskTemp
 		}
 	}
 
-	if !b.isTemplatesConnected(templates) {
+	if err := b.isTemplatesConnected(templates); err != nil {
 		// rule 2 violated
-		return fmt.Errorf("templates not connected")
+		return fmt.Errorf("templates not connected: %s", err.Error())
 	}
 
 	if !b.isConverging(dataRoles, templates) {
@@ -342,8 +344,82 @@ func (b *JobBuilder) preCheck(dataRoles []string, templates map[string]*taskTemp
 	return nil
 }
 
-func (b *JobBuilder) isTemplatesConnected(templates map[string]*taskTemplate) bool {
-	return true
+// isTemplatesConnected function takes a JobBuilder receiver, which will contain the channels and tasks information.
+// Additionally, this function takes a map of task templates as arguments.
+func (b *JobBuilder) isTemplatesConnected(templates map[string]*taskTemplate) error {
+	// A map of string keys and integer values is initialized to keep track of whether a role is found.
+	roleFound := make(map[string]int)
+
+	// For each channel in the JobBuilder's channels field
+	for _, c := range b.channels {
+		// For each role in the Pair field of the current channel
+		for _, role := range c.Pair {
+			// If the role isn't represented in the task templates passed in as an argument
+			if _, ok := templates[role]; !ok {
+				// Return an error message saying that the template for the given role wasn't found.
+				return fmt.Errorf("template for role %s not found", role)
+			}
+
+			// If the role was found in templates map earlier, increment its count
+			roleFound[role]++
+
+			// Check number of times a particular role has been referenced across all the channels from the JobBuilder channels record:
+			// In case any role is connected to more than 2 roles, it'll throw an error.
+			if count, ok := roleFound[role]; ok && count > 2 {
+				// Returns an error indicating that the role is related to more than 2 roles.
+				return fmt.Errorf("role %s is connected to more than 2 roles", role)
+			}
+		}
+	}
+
+	// For each task in the templates list,
+	for _, t := range templates {
+		// for each channel associated with the current template.
+		for channelName, group := range t.JobConfig.GroupAssociation {
+			roleName := t.Role
+
+			// Fetching the channel data
+			channel, ok := b.channels[channelName]
+
+			if !ok {
+				// If the above line errs out, then this error is returned
+				// which says that the channel doesn't exist in the JobBuilder channels.
+				return fmt.Errorf("channel %s not found", channelName)
+			}
+
+			var found bool
+
+			// Checks if the role of this task exists in the current channel's roles pairing.
+			for _, pairRole := range channel.Pair {
+				if roleName == pairRole {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				// If the role-name associated with the current task template is not a part of the current channel,
+				// skip it because rules for it won't apply here.
+				continue
+			}
+
+			for _, groupBy := range channel.GroupBy.Value {
+				if group == groupBy {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				// If the 'group' (which belongs to the current task template) isn't found in one of the
+				// channels' provided grouping sequence, then we throw this error message.
+				return fmt.Errorf("group %s not found in channel %s", group, channelName)
+			}
+		}
+	}
+
+	return nil
+	// If no error is thrown during the executiom of this function, then it returns a nil value.
 }
 
 func (b *JobBuilder) isConverging(dataRoles []string, templates map[string]*taskTemplate) bool {
@@ -366,4 +442,24 @@ type taskTemplate struct {
 	objects.Task
 
 	isDataConsumer bool
+}
+
+// This function takes an interface object as input and returns a slice of its string keys in sorted order.
+func sortedKeys(obj interface{}) []string {
+	// convert the input object into a map type, and check if it could be converted or not
+	mobj, ok := obj.(map[string]interface{})
+	if !ok {
+		return nil // return a nil slice, as we couldn't convert the input object
+	}
+
+	var keys []string // create an empty strings slice
+
+	// loop through the keys of the map and append them to the string slice
+	for key := range mobj {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys) // Sort the slice in place using the built-in `Sort` function.
+
+	return keys // return the sorted string slice of keys
 }

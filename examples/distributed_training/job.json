@@ -6,11 +6,15 @@
         "fromUser": {
             "default": 0
         },
-        "fromSystem": [
-            "6270770d081ef2787befd972",
-            "62707721081ef2787befd973",
-            "6270772a081ef2787befd974"
-        ]
+        "fromSystem": {
+            "trainer": {
+                "us": [
+                    "6270770d081ef2787befd972",
+                    "62707721081ef2787befd973",
+                    "6270772a081ef2787befd974"
+                ]
+            }
+        }
     },
     "priority": "low",
 
@@ -30,11 +34,9 @@
         "numpy >= 1.2.0"
     ],
     "selector": {
-        "sort": "default",
-        "kwargs": {}
+        "sort": "default"
     },
     "optimizer": {
-        "sort": "fedavg",
-        "kwargs": {}
+        "sort": "fedavg"
     }
 }

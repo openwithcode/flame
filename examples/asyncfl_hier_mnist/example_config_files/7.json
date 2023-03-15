@@ -1,0 +1,87 @@
+{
+    "backend": "mqtt",
+    "registry": {
+        "sort": "",
+        "uri": ""
+    },
+    "job": {
+        "id": "64110e3d87e2b700fb6e5d5d",
+        "name": "async_hier_mnist"
+    },
+    "role": "top-aggregator",
+    "realm": "",
+    "channels": [
+        {
+            "name": "param-channel",
+            "description": "Model update is sent from trainer to middle-aggregator and vice-versa",
+            "pair": [
+                "trainer",
+                "middle-aggregator"
+            ],
+            "groupBy": {
+                "type": "tag",
+                "value": [
+                    "eu",
+                    "na"
+                ]
+            },
+            "funcTags": {
+                "middle-aggregator": [
+                    "distribute",
+                    "aggregate"
+                ],
+                "trainer": [
+                    "fetch",
+                    "upload"
+                ]
+            }
+        },
+        {
+            "name": "global-channel",
+            "description": "Model update is sent from middle-aggregator to top-aggregator and vice-versa",
+            "pair": [
+                "top-aggregator",
+                "middle-aggregator"
+            ],
+            "groupBy": {
+                "type": "tag",
+                "value": [
+                    "default"
+                ]
+            },
+            "funcTags": {
+                "middle-aggregator": [
+                    "fetch",
+                    "upload"
+                ],
+                "top-aggregator": [
+                    "distribute",
+                    "aggregate"
+                ]
+            }
+        }
+    ],
+    "groupAssociation": {
+        "global-channel": "default"
+    },
+    "maxRunTime": 1800,
+    "baseModel": {},
+    "hyperparameters": {
+        "aggGoal": 1,
+        "batchSize": 32,
+        "learningRate": 0.01,
+        "rounds": 10
+    },
+    "dependencies": [
+        "numpy \u003e= 1.2.0"
+    ],
+    "optimizer": {
+        "sort": "fedbuff"
+    },
+    "selector": {
+        "sort": "fedbuff",
+        "kwargs": {
+            "c": 2
+        }
+    }
+}

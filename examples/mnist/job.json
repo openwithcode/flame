@@ -6,9 +6,13 @@
         "fromUser": {
             "default": 0
         },
-        "fromSystem": [
-            "61e0c1e86bdf29b562de7c22"
-        ]
+        "fromSystem": {
+            "trainer": {
+                "us": [
+                    "61e0c1e86bdf29b562de7c22"
+                ]
+            }
+        }
     },
     "priority": "low",
 
