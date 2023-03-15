@@ -28,7 +28,7 @@ class FlameSchema(pydBaseModel):
 
 
 GROUPBY_DEFAULT_GROUP = "default"
-REALM_SEPARATOR = "/"
+GROUP_ASSOCIATION_SEPARATOR = "/"
 DEFAULT_HYPERARAMETERS_DICT = {"rounds": 1, "epochs": 1, "batchSize": 16}
 
 
@@ -117,21 +117,18 @@ class GroupBy(FlameSchema):
     type: t.Optional[str] = Field(default="")
     value: t.Optional[list[str]] = Field(default=[])
 
-    def groupable_value(self, realm=""):
+    def groupable_value(self, group_association: str = ""):
         """Return groupby value."""
         if self.value is None:
             return GROUPBY_DEFAULT_GROUP
 
-        for entry in self.value:
-            # check if an entry is a prefix of realm in a '/'-separated
-            # fashion; if so, then return the matching entry
-            if realm.startswith(entry) and (len(realm) == len(entry)
-                                            or realm[len(entry)]
-                                            == REALM_SEPARATOR):
-                return entry
+        group_prefix = group_association.split(GROUP_ASSOCIATION_SEPARATOR)[0]
+
+        for value in self.value:
+            if group_prefix == value:
+                return value
 
         return GROUPBY_DEFAULT_GROUP
-
 
 class Broker(FlameSchema):
     sort_to_host: dict
@@ -160,7 +157,8 @@ class Config(FlameSchema):
         super().__init__(**transformed_config)
 
     role: str
-    realm: str
+    realm: t.Optional[str]  # to be deprecated
+    group_association: dict
     task: t.Optional[str] = Field(default="local")
     task_id: str
     backend: BackendType
