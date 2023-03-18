@@ -63,14 +63,14 @@ type JobBuilder struct {
 }
 
 func NewJobBuilder(dbService database.DBService, jobParams config.JobParams) *JobBuilder {
-	return &JobBuilder{
-		dbService:         dbService,
-		jobParams:         jobParams,
-		roleCode:          make(map[string][]byte),
-		groupAssociations: make(map[string][]map[string]string),
-		datasets:          make(map[string]map[string][]openapi.DatasetInfo),
-		channels:          make(map[string]openapi.Channel),
+	jobBuilder := &JobBuilder{
+		dbService: dbService,
+		jobParams: jobParams,
 	}
+
+	jobBuilder.reset()
+
+	return jobBuilder
 }
 
 func (b *JobBuilder) GetTasks(jobSpec *openapi.JobSpec) (
@@ -80,6 +80,8 @@ func (b *JobBuilder) GetTasks(jobSpec *openapi.JobSpec) (
 	if b.jobSpec == nil {
 		return nil, nil, fmt.Errorf("job spec is nil")
 	}
+
+	b.reset()
 
 	err = b.setup()
 	if err != nil {
@@ -92,6 +94,14 @@ func (b *JobBuilder) GetTasks(jobSpec *openapi.JobSpec) (
 	}
 
 	return tasks, roles, nil
+}
+
+// reset internal variables of JobBuilder
+func (b *JobBuilder) reset() {
+	b.roleCode = make(map[string][]byte)
+	b.groupAssociations = make(map[string][]map[string]string)
+	b.datasets = make(map[string]map[string][]openapi.DatasetInfo)
+	b.channels = make(map[string]openapi.Channel)
 }
 
 // A function named setup which belongs to the struct JobBuilder is defined, which takes no arguments and returns an error.
